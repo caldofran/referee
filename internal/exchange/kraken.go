@@ -111,6 +111,8 @@ func (k *KrakenClient) StartStream(ctx context.Context, priceChan chan<- model.P
 							k.logger.Info("KrakenClient: subscription confirmed")
 							continue
 						}
+						// If it's an object but not a subscription confirmation, skip it
+						continue
 					}
 					
 					// Try to parse as array (for ticker data: [channelID, tickerData, pair, channelName])
