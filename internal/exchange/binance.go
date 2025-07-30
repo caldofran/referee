@@ -60,13 +60,17 @@ func (b *BinanceClient) StartStream(ctx context.Context, priceChan chan<- model.
 				select {
 				case <-ctx.Done():
 					b.logger.Info("BinanceClient: context cancelled, closing connection")
-					c.Close()
+					if closeErr := c.Close(); closeErr != nil {
+						b.logger.Warn("BinanceClient: failed to close connection", "error", closeErr)
+					}
 					return nil
 				default:
 					_, message, err := c.ReadMessage()
 					if err != nil {
 						b.logger.Error("BinanceClient: failed to read message", "error", err)
-						c.Close()
+						if closeErr := c.Close(); closeErr != nil {
+							b.logger.Warn("BinanceClient: failed to close connection", "error", closeErr)
+						}
 						// Break out of message loop to trigger reconnection
 						break
 					}
@@ -105,7 +109,9 @@ func (b *BinanceClient) StartStream(ctx context.Context, priceChan chan<- model.
 								b.logger.Debug("BinanceClient: sent price tick", "bid", bid, "ask", ask)
 							case <-ctx.Done():
 								b.logger.Info("BinanceClient: context cancelled while sending price tick")
-								c.Close()
+								if closeErr := c.Close(); closeErr != nil {
+									b.logger.Warn("BinanceClient: failed to close connection", "error", closeErr)
+								}
 								return nil
 							}
 						}

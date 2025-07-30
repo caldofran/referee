@@ -62,20 +62,22 @@ func (k *KrakenClient) StartStream(ctx context.Context, priceChan chan<- model.P
 					"name": "ticker",
 				},
 			}
-			if err := c.WriteJSON(subscription); err != nil {
-				k.logger.Error("KrakenClient: failed to send subscription", "error", err)
-				c.Close()
-				select {
-				case <-ctx.Done():
-					return nil
-				case <-time.After(backoff):
-					backoff *= 2
-					if backoff > 16*time.Second {
-						backoff = 16 * time.Second
+							if err := c.WriteJSON(subscription); err != nil {
+					k.logger.Error("KrakenClient: failed to send subscription", "error", err)
+					if closeErr := c.Close(); closeErr != nil {
+						k.logger.Warn("KrakenClient: failed to close connection", "error", closeErr)
 					}
+					select {
+					case <-ctx.Done():
+						return nil
+					case <-time.After(backoff):
+						backoff *= 2
+						if backoff > 16*time.Second {
+							backoff = 16 * time.Second
+						}
+					}
+					continue
 				}
-				continue
-			}
 			k.logger.Info("KrakenClient: subscription sent successfully")
 
 			// Handle incoming messages
@@ -83,13 +85,17 @@ func (k *KrakenClient) StartStream(ctx context.Context, priceChan chan<- model.P
 				select {
 				case <-ctx.Done():
 					k.logger.Info("KrakenClient: context cancelled, closing connection")
-					c.Close()
+					if closeErr := c.Close(); closeErr != nil {
+						k.logger.Warn("KrakenClient: failed to close connection", "error", closeErr)
+					}
 					return nil
 				default:
 					_, message, err := c.ReadMessage()
 					if err != nil {
 						k.logger.Error("KrakenClient: failed to read message", "error", err)
-						c.Close()
+						if closeErr := c.Close(); closeErr != nil {
+							k.logger.Warn("KrakenClient: failed to close connection", "error", closeErr)
+						}
 						// Break out of message loop to trigger reconnection
 						break
 					}
@@ -136,7 +142,9 @@ func (k *KrakenClient) StartStream(ctx context.Context, priceChan chan<- model.P
 									k.logger.Debug("KrakenClient: sent price tick", "bid", bid, "ask", ask)
 								case <-ctx.Done():
 									k.logger.Info("KrakenClient: context cancelled while sending price tick")
-									c.Close()
+									if closeErr := c.Close(); closeErr != nil {
+										k.logger.Warn("KrakenClient: failed to close connection", "error", closeErr)
+									}
 									return nil
 								}
 							}

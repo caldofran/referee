@@ -17,6 +17,14 @@ test:
 	@echo "Running tests..."
 	@go test -v -cover ./...
 
+# Run linter
+lint:
+	@echo "Running linter..."
+	@golangci-lint run
+
+# Run tests and linter
+check: test lint
+
 # Run the application (requires config.yaml)
 run: build
 	@echo "Starting Referee..."
