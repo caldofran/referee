@@ -1,0 +1,27 @@
+# Configuration for the arbitrage simulation
+arbitrage:
+  # The fixed trade size for every simulated trade, in EUR.
+  simulated_trade_volume_eur: 1000.0
+  # A constant fee representing the cost of moving assets between exchanges.
+  network_withdrawal_fee_eur: 5.0
+  # A delay in milliseconds to simulate network and execution latency.
+  simulated_latency_ms: 50
+
+# PostgreSQL database connection details.
+# IMPORTANT: Use environment variables for sensitive values in production.
+database:
+  host: "postgres" # Docker service name
+  port: 5432
+  user: "user"
+  # For local dev, you can set password here.
+  # For production/git, set this via environment variable: REFEREE_DB_PASSWORD
+  password: "password"
+  dbname: "referee_sim"
+
+# Per-exchange specific settings.
+# The key (e.g., "kraken") must match the exchange name returned by the client.
+exchanges:
+  kraken:
+    taker_fee_percent: 0.26
+  binance:
+    taker_fee_percent: 0.1
