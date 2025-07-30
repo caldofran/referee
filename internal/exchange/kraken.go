@@ -100,52 +100,60 @@ func (k *KrakenClient) StartStream(ctx context.Context, priceChan chan<- model.P
 						break
 					}
 
-					// Parse the message
-					var msg map[string]interface{}
-					if err := json.Unmarshal(message, &msg); err != nil {
+					// Parse the message - Kraken sends both objects and arrays
+					var msgObj map[string]interface{}
+					var msgArray []interface{}
+					
+					// Try to parse as object first (for subscription confirmations)
+					if err := json.Unmarshal(message, &msgObj); err == nil {
+						// Handle subscription confirmation
+						if event, ok := msgObj["event"].(string); ok && event == "subscriptionStatus" {
+							k.logger.Info("KrakenClient: subscription confirmed")
+							continue
+						}
+					}
+					
+					// Try to parse as array (for ticker data: [channelID, tickerData, pair, channelName])
+					if err := json.Unmarshal(message, &msgArray); err != nil {
 						k.logger.Warn("KrakenClient: failed to parse message", "error", err)
 						continue
 					}
-
-					// Handle subscription confirmation
-					if event, ok := msg["event"].(string); ok && event == "subscriptionStatus" {
-						k.logger.Info("KrakenClient: subscription confirmed")
-						continue
-					}
-
-					// Handle ticker data (array format: [channelID, tickerData, pair, channelName])
-					if tickerData, ok := msg["1"].(map[string]interface{}); ok {
-						// Extract bid and ask prices
-						if bidStr, ok := tickerData["b"].([]interface{}); ok && len(bidStr) > 0 {
-							if askStr, ok := tickerData["a"].([]interface{}); ok && len(askStr) > 0 {
-								bid, err := strconv.ParseFloat(bidStr[0].(string), 64)
-								if err != nil {
-									k.logger.Warn("KrakenClient: failed to parse bid price", "error", err)
-									continue
-								}
-								ask, err := strconv.ParseFloat(askStr[0].(string), 64)
-								if err != nil {
-									k.logger.Warn("KrakenClient: failed to parse ask price", "error", err)
-									continue
-								}
-
-								// Create and send price tick
-								tick := model.PriceTick{
-									Exchange: "kraken",
-									Pair:     "BTC/EUR",
-									Bid:      bid,
-									Ask:      ask,
-								}
-
-								select {
-								case priceChan <- tick:
-									k.logger.Debug("KrakenClient: sent price tick", "bid", bid, "ask", ask)
-								case <-ctx.Done():
-									k.logger.Info("KrakenClient: context cancelled while sending price tick")
-									if closeErr := c.Close(); closeErr != nil {
-										k.logger.Warn("KrakenClient: failed to close connection", "error", closeErr)
+					
+					// Check if it's a ticker array with at least 2 elements
+					if len(msgArray) >= 2 {
+						if tickerData, ok := msgArray[1].(map[string]interface{}); ok {
+							// Extract bid and ask prices
+							if bidStr, ok := tickerData["b"].([]interface{}); ok && len(bidStr) > 0 {
+								if askStr, ok := tickerData["a"].([]interface{}); ok && len(askStr) > 0 {
+									bid, err := strconv.ParseFloat(bidStr[0].(string), 64)
+									if err != nil {
+										k.logger.Warn("KrakenClient: failed to parse bid price", "error", err)
+										continue
 									}
-									return nil
+									ask, err := strconv.ParseFloat(askStr[0].(string), 64)
+									if err != nil {
+										k.logger.Warn("KrakenClient: failed to parse ask price", "error", err)
+										continue
+									}
+
+									// Create and send price tick
+									tick := model.PriceTick{
+										Exchange: "kraken",
+										Pair:     "BTC/EUR",
+										Bid:      bid,
+										Ask:      ask,
+									}
+
+									select {
+									case priceChan <- tick:
+										k.logger.Debug("KrakenClient: sent price tick", "bid", bid, "ask", ask)
+									case <-ctx.Done():
+										k.logger.Info("KrakenClient: context cancelled while sending price tick")
+										if closeErr := c.Close(); closeErr != nil {
+											k.logger.Warn("KrakenClient: failed to close connection", "error", closeErr)
+										}
+										return nil
+									}
 								}
 							}
 						}
