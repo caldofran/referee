@@ -1,7 +1,16 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"log"
+	"referee/internal/config"
+)
 
 func main() {
-	fmt.Println("Project Referee")
+	cfg, err := config.LoadConfig(".")
+	if err != nil {
+		log.Fatalf("cannot load config: %v", err)
+	}
+
+	fmt.Printf("Config loaded: %+v\n", cfg)
 }
