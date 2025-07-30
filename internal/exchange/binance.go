@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"referee/internal/model"
 	"github.com/gorilla/websocket"
+	"referee/internal/model"
 )
 
 // BinanceClient implements the ExchangeClient interface for Binance.
@@ -50,11 +50,11 @@ func (b *BinanceClient) StartStream(ctx context.Context, priceChan chan<- model.
 				}
 				continue
 			}
-			
+
 			// Reset backoff on successful connection
 			backoff = time.Second
 			b.logger.Info("BinanceClient: connected successfully")
-			
+
 			// Handle incoming messages
 			for {
 				select {
@@ -70,14 +70,14 @@ func (b *BinanceClient) StartStream(ctx context.Context, priceChan chan<- model.
 						// Break out of message loop to trigger reconnection
 						break
 					}
-					
+
 					// Parse the message
 					var tickerData map[string]interface{}
 					if err := json.Unmarshal(message, &tickerData); err != nil {
 						b.logger.Warn("BinanceClient: failed to parse message", "error", err)
 						continue
 					}
-					
+
 					// Extract bid and ask prices from Binance ticker format
 					if bidStr, ok := tickerData["b"].(string); ok {
 						if askStr, ok := tickerData["a"].(string); ok {
@@ -91,7 +91,7 @@ func (b *BinanceClient) StartStream(ctx context.Context, priceChan chan<- model.
 								b.logger.Warn("BinanceClient: failed to parse ask price", "error", err)
 								continue
 							}
-							
+
 							// Create and send price tick
 							tick := model.PriceTick{
 								Exchange: "binance",
@@ -99,7 +99,7 @@ func (b *BinanceClient) StartStream(ctx context.Context, priceChan chan<- model.
 								Bid:      bid,
 								Ask:      ask,
 							}
-							
+
 							select {
 							case priceChan <- tick:
 								b.logger.Debug("BinanceClient: sent price tick", "bid", bid, "ask", ask)
@@ -114,4 +114,4 @@ func (b *BinanceClient) StartStream(ctx context.Context, priceChan chan<- model.
 			}
 		}
 	}
-} 
+}

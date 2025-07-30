@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"time"
 
-	"referee/internal/model"
-	"github.com/gorilla/websocket"
 	"encoding/json"
+	"github.com/gorilla/websocket"
+	"referee/internal/model"
 	"strconv"
 )
 
@@ -50,10 +50,10 @@ func (k *KrakenClient) StartStream(ctx context.Context, priceChan chan<- model.P
 				}
 				continue
 			}
-			
+
 			// Reset backoff on successful connection
 			backoff = time.Second
-			
+
 			// Send subscription message for BTC/EUR ticker
 			subscription := map[string]interface{}{
 				"event": "subscribe",
@@ -77,7 +77,7 @@ func (k *KrakenClient) StartStream(ctx context.Context, priceChan chan<- model.P
 				continue
 			}
 			k.logger.Info("KrakenClient: subscription sent successfully")
-			
+
 			// Handle incoming messages
 			for {
 				select {
@@ -93,20 +93,20 @@ func (k *KrakenClient) StartStream(ctx context.Context, priceChan chan<- model.P
 						// Break out of message loop to trigger reconnection
 						break
 					}
-					
+
 					// Parse the message
 					var msg map[string]interface{}
 					if err := json.Unmarshal(message, &msg); err != nil {
 						k.logger.Warn("KrakenClient: failed to parse message", "error", err)
 						continue
 					}
-					
+
 					// Handle subscription confirmation
 					if event, ok := msg["event"].(string); ok && event == "subscriptionStatus" {
 						k.logger.Info("KrakenClient: subscription confirmed")
 						continue
 					}
-					
+
 					// Handle ticker data (array format: [channelID, tickerData, pair, channelName])
 					if tickerData, ok := msg["1"].(map[string]interface{}); ok {
 						// Extract bid and ask prices
@@ -122,7 +122,7 @@ func (k *KrakenClient) StartStream(ctx context.Context, priceChan chan<- model.P
 									k.logger.Warn("KrakenClient: failed to parse ask price", "error", err)
 									continue
 								}
-								
+
 								// Create and send price tick
 								tick := model.PriceTick{
 									Exchange: "kraken",
@@ -130,7 +130,7 @@ func (k *KrakenClient) StartStream(ctx context.Context, priceChan chan<- model.P
 									Bid:      bid,
 									Ask:      ask,
 								}
-								
+
 								select {
 								case priceChan <- tick:
 									k.logger.Debug("KrakenClient: sent price tick", "bid", bid, "ask", ask)

@@ -50,14 +50,14 @@ func TestArbitrageEngine_ProcessTick(t *testing.T) {
 	t.Run("profitable opportunity", func(t *testing.T) {
 		// Create a fresh engine for this test
 		engine2 := NewArbitrageEngine(logger, mockRepo, cfg)
-		
+
 		// Mock the LogTrade call
 		mockRepo.On("LogTrade", mock.Anything, mock.Anything).Return(nil).Once()
 
 		// First, add Kraken price
 		tick1 := model.PriceTick{Exchange: "kraken", Pair: "BTC/EUR", Bid: 60000, Ask: 60050}
 		engine2.ProcessTick(context.Background(), tick1)
-		
+
 		// Then add Binance price (should create profitable opportunity)
 		tick2 := model.PriceTick{Exchange: "binance", Pair: "BTC/EUR", Bid: 61000, Ask: 61050}
 		engine2.ProcessTick(context.Background(), tick2)

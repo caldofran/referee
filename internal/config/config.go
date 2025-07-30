@@ -15,9 +15,9 @@ type Config struct {
 
 // ArbitrageConfig defines the arbitrage-related settings.
 type ArbitrageConfig struct {
-	SimulatedTradeVolumeEUR  float64 `mapstructure:"simulated_trade_volume_eur"`
-	NetworkWithdrawalFeeEUR  float64 `mapstructure:"network_withdrawal_fee_eur"`
-	SimulatedLatencyMS       int     `mapstructure:"simulated_latency_ms"`
+	SimulatedTradeVolumeEUR float64 `mapstructure:"simulated_trade_volume_eur"`
+	NetworkWithdrawalFeeEUR float64 `mapstructure:"network_withdrawal_fee_eur"`
+	SimulatedLatencyMS      int     `mapstructure:"simulated_latency_ms"`
 }
 
 // DatabaseConfig defines the database connection settings.
