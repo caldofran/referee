@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/sync/errgroup"
 	"referee/internal/model"
 )
 
@@ -33,8 +33,7 @@ func main() {
 	logger.Info("Configuration loaded successfully")
 
 	// Create database connection pool
-	connStr := "postgres://" + cfg.Database.User + ":" + cfg.Database.Password + "@" + cfg.Database.Host + ":" + fmt.Sprintf("%d", cfg.Database.Port) + "/" + cfg.Database.DBName
-	pool, err := pgxpool.New(context.Background(), connStr)
+	pool, err := pgxpool.New(context.Background(), cfg.Database.DSN())
 	if err != nil {
 		logger.Error("Failed to connect to database", "error", err)
 		os.Exit(1)
@@ -49,65 +48,60 @@ func main() {
 	engine := arbitrage.NewArbitrageEngine(logger, repo, &cfg)
 	logger.Info("Arbitrage engine initialized")
 
-	// Create exchange clients
-	clients := []exchange.ExchangeClient{
-		exchange.NewKrakenClient(logger),
-		exchange.NewBinanceClient(logger),
+	// Create exchange clients based on configuration
+	clients := make([]exchange.ExchangeClient, 0, len(cfg.Exchanges))
+	for name, exchangeCfg := range cfg.Exchanges {
+		client, err := exchange.NewClient(name, logger, &exchangeCfg)
+		if err != nil {
+			logger.Error("Failed to create exchange client", "exchange", name, "error", err)
+			os.Exit(1)
+		}
+		clients = append(clients, client)
 	}
 	logger.Info("Exchange clients created", "count", len(clients))
 
 	// Set up context for graceful shutdown
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	// Set up signal handling for graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	// Use an errgroup to manage goroutines
+	eg, gCtx := errgroup.WithContext(ctx)
 
 	// Create the fan-in channel for price ticks
 	priceChan := make(chan model.PriceTick, 100)
 
 	// Start the arbitrage engine goroutine
-	go func() {
+	eg.Go(func() error {
 		logger.Info("Starting arbitrage engine")
 		for {
 			select {
-			case <-ctx.Done():
+			case <-gCtx.Done():
 				logger.Info("Arbitrage engine shutting down")
-				return
+				return gCtx.Err()
 			case tick := <-priceChan:
-				engine.ProcessTick(ctx, tick)
+				engine.ProcessTick(gCtx, tick)
 			}
 		}
-	}()
+	})
 
 	// Start all exchange clients in goroutines
 	for _, client := range clients {
-		go func(c exchange.ExchangeClient) {
+		c := client // capture range variable
+		eg.Go(func() error {
 			logger.Info("Starting exchange client", "exchange", c.GetName())
-			if err := c.StartStream(ctx, priceChan, "BTC/EUR"); err != nil {
+			if err := c.StartStream(gCtx, priceChan, cfg.Arbitrage.TradingPair); err != nil {
 				logger.Error("Exchange client error", "exchange", c.GetName(), "error", err)
+				return err
 			}
-		}(client)
+			return nil
+		})
 	}
 
-	// Wait for shutdown signal
+	// Wait for shutdown signal or an error from a goroutine
 	logger.Info("Referee is running. Press Ctrl+C to stop.")
-	<-sigChan
-	logger.Info("Shutdown signal received, initiating graceful shutdown")
-
-	// Cancel context to stop all goroutines
-	cancel()
-
-	// Give some time for graceful shutdown
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer shutdownCancel()
-
-	// Wait for shutdown or timeout
-	select {
-	case <-shutdownCtx.Done():
-		logger.Warn("Shutdown timeout reached, forcing exit")
-	default:
-		logger.Info("Graceful shutdown completed")
+	if err := eg.Wait(); err != nil && err != context.Canceled {
+		logger.Error("Application error", "error", err)
 	}
+
+	logger.Info("Graceful shutdown completed")
 }
