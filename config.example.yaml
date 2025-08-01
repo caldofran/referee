@@ -6,6 +6,8 @@ arbitrage:
   network_withdrawal_fee_eur: 5.0
   # A delay in milliseconds to simulate network and execution latency.
   simulated_latency_ms: 50
+  # The trading pair to monitor for arbitrage opportunities.
+  trading_pair: "BTC/EUR"
 
 # PostgreSQL database connection details.
 # IMPORTANT: Use environment variables for sensitive values in production.

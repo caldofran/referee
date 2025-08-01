@@ -1,2 +1,6 @@
 # Local configuration file
 config.yaml
+
+# Compiled binary
+referee
+bin/referee

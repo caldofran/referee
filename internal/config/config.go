@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"github.com/spf13/viper"
 	"strings"
 )
@@ -18,6 +19,7 @@ type ArbitrageConfig struct {
 	SimulatedTradeVolumeEUR float64 `mapstructure:"simulated_trade_volume_eur"`
 	NetworkWithdrawalFeeEUR float64 `mapstructure:"network_withdrawal_fee_eur"`
 	SimulatedLatencyMS      int     `mapstructure:"simulated_latency_ms"`
+	TradingPair             string  `mapstructure:"trading_pair"`
 }
 
 // DatabaseConfig defines the database connection settings.
@@ -27,6 +29,11 @@ type DatabaseConfig struct {
 	User     string
 	Password string
 	DBName   string
+}
+
+// DSN returns the data source name for connecting to the database.
+func (c *DatabaseConfig) DSN() string {
+	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s", c.User, c.Password, c.Host, c.Port, c.DBName)
 }
 
 // ExchangeConfig defines settings for a specific exchange.
