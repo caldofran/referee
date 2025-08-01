@@ -8,6 +8,8 @@ arbitrage:
   simulated_latency_ms: 50
   # The trading pair to monitor for arbitrage opportunities.
   trading_pair: "BTC/EUR"
+  # The interval in milliseconds at which the bot checks for arbitrage opportunities.
+  check_interval_ms: 5000
 
 # PostgreSQL database connection details.
 # IMPORTANT: Use environment variables for sensitive values in production.

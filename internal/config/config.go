@@ -20,6 +20,7 @@ type ArbitrageConfig struct {
 	NetworkWithdrawalFeeEUR float64 `mapstructure:"network_withdrawal_fee_eur"`
 	SimulatedLatencyMS      int     `mapstructure:"simulated_latency_ms"`
 	TradingPair             string  `mapstructure:"trading_pair"`
+	CheckIntervalMS         int     `mapstructure:"check_interval_ms"`
 }
 
 // DatabaseConfig defines the database connection settings.

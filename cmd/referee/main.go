@@ -10,7 +10,6 @@ import (
 	"referee/internal/database"
 	"referee/internal/exchange"
 	"syscall"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
@@ -70,14 +69,18 @@ func main() {
 	// Create the fan-in channel for price ticks
 	priceChan := make(chan model.PriceTick, 100)
 
-	// Start the arbitrage engine goroutine
+	// Start the arbitrage engine
 	eg.Go(func() error {
-		logger.Info("Starting arbitrage engine")
+		engine.Start(gCtx)
+		return nil
+	})
+
+	// Start a goroutine to process incoming prices
+	eg.Go(func() error {
 		for {
 			select {
 			case <-gCtx.Done():
-				logger.Info("Arbitrage engine shutting down")
-				return gCtx.Err()
+				return nil
 			case tick := <-priceChan:
 				engine.ProcessTick(gCtx, tick)
 			}
