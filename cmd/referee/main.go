@@ -10,7 +10,6 @@ import (
 	"referee/internal/database"
 	"referee/internal/exchange"
 	"syscall"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
@@ -43,6 +42,13 @@ func main() {
 
 	// Create repository
 	repo := &database.PostgresRepository{Pool: pool}
+
+	// Run database migrations
+	if err := repo.Migrate(context.Background()); err != nil {
+		logger.Error("Failed to run database migrations", "error", err)
+		os.Exit(1)
+	}
+	logger.Info("Database migrations completed successfully")
 
 	// Create arbitrage engine
 	engine := arbitrage.NewArbitrageEngine(logger, repo, &cfg)
