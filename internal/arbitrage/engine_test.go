@@ -7,7 +7,6 @@ import (
 	"referee/internal/config"
 	"referee/internal/model"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/mock"
 )
@@ -21,7 +20,17 @@ func (m *MockRepository) LogTrade(ctx context.Context, trade model.SimulatedTrad
 	return args.Error(0)
 }
 
-func TestArbitrageEngine_ProcessTick(t *testing.T) {
+func (m *MockRepository) LogPriceTick(ctx context.Context, tick model.PriceTick) error {
+	args := m.Called(ctx, tick)
+	return args.Error(0)
+}
+
+func (m *MockRepository) Migrate(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
+func TestArbitrageEngine_CheckArbitrage(t *testing.T) {
 	mockRepo := new(MockRepository)
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
@@ -30,6 +39,7 @@ func TestArbitrageEngine_ProcessTick(t *testing.T) {
 			SimulatedTradeVolumeEUR: 1000.0,
 			NetworkWithdrawalFeeEUR: 5.0,
 			SimulatedLatencyMS:      10,
+			TradingPair:             "BTC/EUR",
 		},
 		Exchanges: map[string]config.ExchangeConfig{
 			"kraken":  {TakerFeePercent: 0.26},
@@ -39,43 +49,32 @@ func TestArbitrageEngine_ProcessTick(t *testing.T) {
 
 	engine := NewArbitrageEngine(logger, mockRepo, cfg)
 
-	// Test Case 1: No opportunity
 	t.Run("no opportunity", func(t *testing.T) {
-		tick1 := model.PriceTick{Exchange: "kraken", Pair: "BTC/EUR", Bid: 60000, Ask: 60050}
-		engine.ProcessTick(context.Background(), tick1)
+		engine.latestPrices = map[string]model.PriceTick{
+			"kraken":  {Exchange: "kraken", Pair: "BTC/EUR", Bid: 60000, Ask: 60050},
+			"binance": {Exchange: "binance", Pair: "BTC/EUR", Bid: 60000, Ask: 60050},
+		}
+		engine.checkArbitrage(context.Background())
 		mockRepo.AssertNotCalled(t, "LogTrade")
 	})
 
-	// Test Case 2: Profitable opportunity
 	t.Run("profitable opportunity", func(t *testing.T) {
-		// Create a fresh engine for this test
-		engine2 := NewArbitrageEngine(logger, mockRepo, cfg)
-
-		// Mock the LogTrade call
 		mockRepo.On("LogTrade", mock.Anything, mock.Anything).Return(nil).Once()
-
-		// First, add Kraken price
-		tick1 := model.PriceTick{Exchange: "kraken", Pair: "BTC/EUR", Bid: 60000, Ask: 60050}
-		engine2.ProcessTick(context.Background(), tick1)
-
-		// Then add Binance price (should create profitable opportunity)
-		tick2 := model.PriceTick{Exchange: "binance", Pair: "BTC/EUR", Bid: 61000, Ask: 61050}
-		engine2.ProcessTick(context.Background(), tick2)
-
-		time.Sleep(20 * time.Millisecond) // Wait for latency simulation
+		engine.latestPrices = map[string]model.PriceTick{
+			"kraken":  {Exchange: "kraken", Pair: "BTC/EUR", Bid: 60000, Ask: 60050},
+			"binance": {Exchange: "binance", Pair: "BTC/EUR", Bid: 61000, Ask: 61050},
+		}
+		engine.checkArbitrage(context.Background())
 		mockRepo.AssertExpectations(t)
 	})
 
-	// Test Case 3: Opportunity made unprofitable by fees
 	t.Run("unprofitable due to fees", func(t *testing.T) {
-		// Reset mock for this sub-test
 		mockRepo.Mock = mock.Mock{}
-		mockRepo.AssertNotCalled(t, "LogTrade")
-
-		engine.latestPrices["kraken"] = model.PriceTick{Exchange: "kraken", Pair: "BTC/EUR", Bid: 60000, Ask: 60001}
-		tick3 := model.PriceTick{Exchange: "binance", Pair: "BTC/EUR", Bid: 60002, Ask: 60003}
-		engine.ProcessTick(context.Background(), tick3)
-
+		engine.latestPrices = map[string]model.PriceTick{
+			"kraken":  {Exchange: "kraken", Pair: "BTC/EUR", Bid: 60000, Ask: 60001},
+			"binance": {Exchange: "binance", Pair: "BTC/EUR", Bid: 60002, Ask: 60003},
+		}
+		engine.checkArbitrage(context.Background())
 		mockRepo.AssertNotCalled(t, "LogTrade")
 	})
 }

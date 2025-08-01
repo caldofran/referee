@@ -6,64 +6,92 @@ import (
 	"referee/internal/config"
 	"referee/internal/database"
 	"referee/internal/model"
+	"sync"
 	"time"
 )
 
 // ArbitrageEngine holds the logic for identifying and executing arbitrage opportunities.
 type ArbitrageEngine struct {
-	logger       *slog.Logger
-	repo         database.Repository
-	cfg          *config.Config
-	latestPrices map[string]model.PriceTick
+	logger         *slog.Logger
+	repo           database.Repository
+	cfg            *config.Config
+	latestPrices   map[string]model.PriceTick
+	priceMutex     sync.RWMutex
+	checkInterval  time.Duration
 }
 
 // NewArbitrageEngine creates a new instance of the ArbitrageEngine.
 func NewArbitrageEngine(logger *slog.Logger, repo database.Repository, cfg *config.Config) *ArbitrageEngine {
 	return &ArbitrageEngine{
-		logger:       logger,
-		repo:         repo,
-		cfg:          cfg,
-		latestPrices: make(map[string]model.PriceTick),
+		logger:        logger,
+		repo:          repo,
+		cfg:           cfg,
+		latestPrices:  make(map[string]model.PriceTick),
+		checkInterval: time.Duration(cfg.Arbitrage.CheckIntervalMS) * time.Millisecond,
+	}
+}
+
+// Start begins the arbitrage checking loop.
+func (e *ArbitrageEngine) Start(ctx context.Context) {
+	ticker := time.NewTicker(e.checkInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			e.checkArbitrage(ctx)
+		}
 	}
 }
 
 // ProcessTick processes a new price tick to check for arbitrage opportunities.
 func (e *ArbitrageEngine) ProcessTick(ctx context.Context, tick model.PriceTick) {
-	// Update the latest price for this exchange
+	e.priceMutex.Lock()
+	defer e.priceMutex.Unlock()
 	e.latestPrices[tick.Exchange] = tick
+}
 
-	// Check for arbitrage opportunities with other exchanges
-	for exchange, latestTick := range e.latestPrices {
-		if exchange == tick.Exchange {
-			continue // Skip comparing with itself
-		}
+// checkArbitrage checks for arbitrage opportunities between all exchanges.
+func (e *ArbitrageEngine) checkArbitrage(ctx context.Context) {
+	e.priceMutex.RLock()
+	defer e.priceMutex.RUnlock()
 
-		// Check if we can buy on one exchange and sell on another
-		if tick.Ask < latestTick.Bid {
-			// Buy on tick.Exchange, sell on exchange
-			e.checkAndExecuteArbitrage(ctx, tick.Exchange, exchange, tick.Ask, latestTick.Bid)
-		} else if latestTick.Ask < tick.Bid {
-			// Buy on exchange, sell on tick.Exchange
-			e.checkAndExecuteArbitrage(ctx, exchange, tick.Exchange, latestTick.Ask, tick.Bid)
+	exchanges := make([]string, 0, len(e.latestPrices))
+	for ex := range e.latestPrices {
+		exchanges = append(exchanges, ex)
+	}
+
+	for i := 0; i < len(exchanges); i++ {
+		for j := i + 1; j < len(exchanges); j++ {
+			ex1 := exchanges[i]
+			ex2 := exchanges[j]
+
+			price1 := e.latestPrices[ex1]
+			price2 := e.latestPrices[ex2]
+
+			if price1.Ask < price2.Bid {
+				e.evaluateAndExecute(ctx, ex1, ex2, price1.Ask, price2.Bid)
+			}
+			if price2.Ask < price1.Bid {
+				e.evaluateAndExecute(ctx, ex2, ex1, price2.Ask, price1.Bid)
+			}
 		}
 	}
 }
 
-// checkAndExecuteArbitrage checks if an arbitrage opportunity is profitable and executes it.
-func (e *ArbitrageEngine) checkAndExecuteArbitrage(ctx context.Context, buyExchange, sellExchange string, buyPrice, sellPrice float64) {
-	// Calculate profit using the formulas from the tech spec
+// evaluateAndExecute checks if an arbitrage opportunity is profitable and executes it.
+func (e *ArbitrageEngine) evaluateAndExecute(ctx context.Context, buyExchange, sellExchange string, buyPrice, sellPrice float64) {
 	volumeInCrypto := e.cfg.Arbitrage.SimulatedTradeVolumeEUR / buyPrice
 	grossProfitEUR := (sellPrice - buyPrice) * volumeInCrypto
 
-	// Calculate fees
 	buyLegFee := (buyPrice * volumeInCrypto) * (e.cfg.Exchanges[buyExchange].TakerFeePercent / 100)
 	sellLegFee := (sellPrice * volumeInCrypto) * (e.cfg.Exchanges[sellExchange].TakerFeePercent / 100)
 	totalFeesEUR := buyLegFee + sellLegFee + e.cfg.Arbitrage.NetworkWithdrawalFeeEUR
 
-	// Calculate net profit
 	netProfitEUR := grossProfitEUR - totalFeesEUR
 
-	// Check if the trade is profitable
 	if netProfitEUR > 0 {
 		e.logger.Info("Profitable arbitrage opportunity found",
 			"buyExchange", buyExchange,
@@ -73,13 +101,11 @@ func (e *ArbitrageEngine) checkAndExecuteArbitrage(ctx context.Context, buyExcha
 			"netProfit", netProfitEUR,
 		)
 
-		// Simulate latency before logging the trade
 		time.Sleep(time.Duration(e.cfg.Arbitrage.SimulatedLatencyMS) * time.Millisecond)
 
-		// Log the trade
 		trade := model.SimulatedTrade{
 			Timestamp:      time.Now(),
-			TradingPair:    "BTC/EUR",
+			TradingPair:    e.cfg.Arbitrage.TradingPair,
 			BuyExchange:    buyExchange,
 			SellExchange:   sellExchange,
 			BuyPrice:       buyPrice,
