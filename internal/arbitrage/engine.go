@@ -29,6 +29,11 @@ func NewArbitrageEngine(logger *slog.Logger, repo database.Repository, cfg *conf
 
 // ProcessTick processes a new price tick to check for arbitrage opportunities.
 func (e *ArbitrageEngine) ProcessTick(ctx context.Context, tick model.PriceTick) {
+	// Log the incoming price tick
+	if err := e.repo.LogPriceTick(ctx, tick); err != nil {
+		e.logger.Error("Failed to log price tick", "error", err)
+	}
+
 	// Update the latest price for this exchange
 	e.latestPrices[tick.Exchange] = tick
 
@@ -79,7 +84,7 @@ func (e *ArbitrageEngine) checkAndExecuteArbitrage(ctx context.Context, buyExcha
 		// Log the trade
 		trade := model.SimulatedTrade{
 			Timestamp:      time.Now(),
-			TradingPair:    "BTC/EUR",
+			TradingPair:    e.cfg.Arbitrage.TradingPair,
 			BuyExchange:    buyExchange,
 			SellExchange:   sellExchange,
 			BuyPrice:       buyPrice,

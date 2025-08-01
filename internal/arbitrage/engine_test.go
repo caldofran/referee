@@ -21,6 +21,16 @@ func (m *MockRepository) LogTrade(ctx context.Context, trade model.SimulatedTrad
 	return args.Error(0)
 }
 
+func (m *MockRepository) LogPriceTick(ctx context.Context, tick model.PriceTick) error {
+	args := m.Called(ctx, tick)
+	return args.Error(0)
+}
+
+func (m *MockRepository) Migrate(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
 func TestArbitrageEngine_ProcessTick(t *testing.T) {
 	mockRepo := new(MockRepository)
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -41,6 +51,7 @@ func TestArbitrageEngine_ProcessTick(t *testing.T) {
 
 	// Test Case 1: No opportunity
 	t.Run("no opportunity", func(t *testing.T) {
+		mockRepo.On("LogPriceTick", mock.Anything, mock.Anything).Return(nil).Once()
 		tick1 := model.PriceTick{Exchange: "kraken", Pair: "BTC/EUR", Bid: 60000, Ask: 60050}
 		engine.ProcessTick(context.Background(), tick1)
 		mockRepo.AssertNotCalled(t, "LogTrade")
@@ -53,6 +64,7 @@ func TestArbitrageEngine_ProcessTick(t *testing.T) {
 
 		// Mock the LogTrade call
 		mockRepo.On("LogTrade", mock.Anything, mock.Anything).Return(nil).Once()
+		mockRepo.On("LogPriceTick", mock.Anything, mock.Anything).Return(nil).Twice()
 
 		// First, add Kraken price
 		tick1 := model.PriceTick{Exchange: "kraken", Pair: "BTC/EUR", Bid: 60000, Ask: 60050}
@@ -70,6 +82,7 @@ func TestArbitrageEngine_ProcessTick(t *testing.T) {
 	t.Run("unprofitable due to fees", func(t *testing.T) {
 		// Reset mock for this sub-test
 		mockRepo.Mock = mock.Mock{}
+		mockRepo.On("LogPriceTick", mock.Anything, mock.Anything).Return(nil).Once()
 		mockRepo.AssertNotCalled(t, "LogTrade")
 
 		engine.latestPrices["kraken"] = model.PriceTick{Exchange: "kraken", Pair: "BTC/EUR", Bid: 60000, Ask: 60001}
